@@ -54,9 +54,9 @@ extension WorkMailMessageFlow {
         public static let _payloadPath: String = "messageContent"
         public static let _options: AWSShapeOptions = [.rawPayload, .allowStreaming]
         /// The raw content of the email message, in MIME format.
-        public let messageContent: HTTPBody
+        public let messageContent: AWSHTTPBody
 
-        public init(messageContent: HTTPBody) {
+        public init(messageContent: AWSHTTPBody) {
             self.messageContent = messageContent
         }
 

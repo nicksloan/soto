@@ -1225,9 +1225,9 @@ extension SageMakerGeospatial {
         ]
 
         /// The output binary file.
-        public let binaryFile: HTTPBody?
+        public let binaryFile: AWSHTTPBody?
 
-        public init(binaryFile: HTTPBody? = nil) {
+        public init(binaryFile: AWSHTTPBody? = nil) {
             self.binaryFile = binaryFile
         }
 

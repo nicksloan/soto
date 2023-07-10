@@ -644,7 +644,7 @@ extension S3 {
                         results.append(element)
                     }
                 }
-                let body: HTTPBody
+                let body: AWSHTTPBody
                 if let progress = newProgress {
                     body = .init(asyncSequence: buffer.asyncSequence(chunkSize: 64 * 1024).reportProgress(reportFn: progress), length: buffer.readableBytes)
                 } else {

@@ -673,9 +673,9 @@ extension Schemas {
             AWSMemberEncoding(label: "body", location: .body("Body"))
         ]
 
-        public let body: HTTPBody?
+        public let body: AWSHTTPBody?
 
-        public init(body: HTTPBody? = nil) {
+        public init(body: AWSHTTPBody? = nil) {
             self.body = body
         }
 

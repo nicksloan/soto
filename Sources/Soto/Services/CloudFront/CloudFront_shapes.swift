@@ -4476,9 +4476,9 @@ extension CloudFront {
         /// The version identifier for the current version of the CloudFront function.
         public let eTag: String?
         /// The function code of a CloudFront function.
-        public let functionCode: HTTPBody?
+        public let functionCode: AWSHTTPBody?
 
-        public init(contentType: String? = nil, eTag: String? = nil, functionCode: HTTPBody? = nil) {
+        public init(contentType: String? = nil, eTag: String? = nil, functionCode: AWSHTTPBody? = nil) {
             self.contentType = contentType
             self.eTag = eTag
             self.functionCode = functionCode
