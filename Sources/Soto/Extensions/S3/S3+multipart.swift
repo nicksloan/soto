@@ -57,7 +57,7 @@ extension S3 {
         _ input: GetObjectRequest,
         partSize: Int = 5 * 1024 * 1024,
         logger: Logger = AWSClient.loggingDisabled,
-        outputStream: @escaping (ByteBuffer, Int64) async throws -> Void
+        outputStream: (ByteBuffer, Int64) async throws -> Void
     ) async throws -> Int64 {
         // get object size before downloading
         let headRequest = S3.HeadObjectRequest(
@@ -138,24 +138,26 @@ extension S3 {
         _ input: GetObjectRequest,
         partSize: Int = 5 * 1024 * 1024,
         filename: String,
-        threadPool: NIOThreadPool = .singleton,
+        fileSystem: FileSystem = .shared,
         logger: Logger = AWSClient.loggingDisabled,
         progress: @escaping (Double) async throws -> Void = { _ in }
     ) async throws -> Int64 {
-        let fileIO = NonBlockingFileIO(threadPool: threadPool)
-        return try await fileIO.withFileHandle(path: filename, mode: .write, flags: .allowFileCreation()) { fileHandle in
+        return try await fileSystem.withFileHandle(forWritingAt: FilePath(filename), options: .newFile(replaceExisting: true)) { fileHandle in
             let progressValue = ManagedAtomic(0)
+            var bufferedWriter = fileHandle.bufferedWriter(capacity: .bytes(numericCast(partSize + 1)))
 
-            return try await self.multipartDownload(
+            let result = try await self.multipartDownload(
                 input,
                 partSize: partSize,
                 logger: logger
             ) { byteBuffer, fileSize in
                 let bufferSize = byteBuffer.readableBytes
-                _ = try await fileIO.write(fileHandle: fileHandle, buffer: byteBuffer)
+                try await bufferedWriter.write(contentsOf: byteBuffer.readableBytesView)
                 let progressIntValue = progressValue.wrappingIncrementThenLoad(by: bufferSize, ordering: .relaxed)
                 try await progress(Double(progressIntValue) / Double(fileSize))
             }
+            try await bufferedWriter.flush()
+            return result
         }
     }
 
