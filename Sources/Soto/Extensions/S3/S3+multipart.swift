@@ -15,7 +15,6 @@
 import Atomics
 import Logging
 import NIOCore
-import NIOFileSystem
 import NIOPosix
 import SotoCore
 
@@ -138,13 +137,13 @@ extension S3 {
         _ input: GetObjectRequest,
         partSize: Int = 5 * 1024 * 1024,
         filename: String,
-        fileSystem: FileSystem = .shared,
+        threadPool: NIOThreadPool = .singleton,
         logger: Logger = AWSClient.loggingDisabled,
         progress: @escaping (Double) async throws -> Void = { _ in }
     ) async throws -> Int64 {
-        return try await fileSystem.withFileHandle(forWritingAt: FilePath(filename), options: .newFile(replaceExisting: true)) { fileHandle in
+        let fileIO = NonBlockingFileIO(threadPool: threadPool)
+        return try await fileIO.withFileHandle(path: filename, mode: .write, flags: .allowFileCreation()) { fileHandle in
             let progressValue = ManagedAtomic(0)
-            var bufferedWriter = fileHandle.bufferedWriter(capacity: .bytes(numericCast(partSize + 1)))
 
             let result = try await self.multipartDownload(
                 input,
@@ -152,11 +151,10 @@ extension S3 {
                 logger: logger
             ) { byteBuffer, fileSize in
                 let bufferSize = byteBuffer.readableBytes
-                try await bufferedWriter.write(contentsOf: byteBuffer.readableBytesView)
+                try await fileIO.write(fileHandle: fileHandle, buffer: byteBuffer)
                 let progressIntValue = progressValue.wrappingIncrementThenLoad(by: bufferSize, ordering: .relaxed)
                 try await progress(Double(progressIntValue) / Double(fileSize))
             }
-            try await bufferedWriter.flush()
             return result
         }
     }
@@ -224,20 +222,25 @@ extension S3 {
         filename: String,
         concurrentUploads: Int = 4,
         abortOnFail: Bool = true,
-        fileSystem: FileSystem = .shared,
+        threadPool: NIOThreadPool = .singleton,
         logger: Logger = AWSClient.loggingDisabled,
         progress: @escaping @Sendable (Double) async throws -> Void = { _ in }
     ) async throws -> CompleteMultipartUploadOutput {
-        return try await fileSystem.withFileHandle(forReadingAt: FilePath(filename)) { fileHandle in
-            let chunks = fileHandle.readChunks(in: ..., chunkLength: .bytes(numericCast(partSize)))
-            let length = try await Double(fileHandle.info().size)
+        let fileIO = NonBlockingFileIO(threadPool: threadPool)
+        return try await fileIO.withFileRegion(path: filename) { fileRegion in
+            let fileSequence = FileByteBufferAsyncSequence(
+                fileRegion.fileHandle,
+                fileIO: fileIO,
+                chunkSize: partSize
+            )
+            let length = Double(fileRegion.readableBytes)
             @Sendable func percentProgress(_ value: Int) async throws {
                 try await progress(Double(value) / length)
             }
             return try await self.multipartUpload(
                 input,
                 partSize: partSize,
-                bufferSequence: chunks,
+                bufferSequence: fileSequence,
                 concurrentUploads: concurrentUploads,
                 abortOnFail: abortOnFail,
                 logger: logger,
@@ -301,20 +304,26 @@ extension S3 {
         filename: String,
         concurrentUploads: Int = 4,
         abortOnFail: Bool = true,
-        fileSystem: FileSystem = .shared,
+        threadPool: NIOThreadPool = .singleton,
         logger: Logger = AWSClient.loggingDisabled,
         progress: @escaping (Double) async throws -> Void = { _ in }
     ) async throws -> CompleteMultipartUploadOutput {
-        return try await fileSystem.withFileHandle(forReadingAt: FilePath(filename)) { fileHandle in
-            let chunks = fileHandle.readChunks(in: ..., chunkLength: .bytes(numericCast(partSize)))
-            let length = try await Double(fileHandle.info().size)
+        let fileIO = NonBlockingFileIO(threadPool: threadPool)
+        return try await fileIO.withFileRegion(path: filename) { fileRegion in
+            let fileSequence = FileByteBufferAsyncSequence(
+                fileRegion.fileHandle,
+                fileIO: fileIO,
+                chunkSize: partSize
+            )
+            // let chunks = fileHandle.readChunks(in: ..., chunkLength: .bytes(numericCast(partSize)))
+            let length = Double(fileRegion.readableBytes)
             @Sendable func percentProgress(_ value: Int) async throws {
                 try await progress(Double(value) / length)
             }
             return try await self.resumeMultipartUpload(
                 input,
                 partSize: partSize,
-                bufferSequence: chunks,
+                bufferSequence: fileSequence,
                 concurrentUploads: concurrentUploads,
                 abortOnFail: abortOnFail,
                 logger: logger,

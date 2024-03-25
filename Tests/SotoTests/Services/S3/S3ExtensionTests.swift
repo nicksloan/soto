@@ -13,8 +13,8 @@
 //===----------------------------------------------------------------------===//
 
 import AsyncHTTPClient
-import NIOFileSystem
 import NIOFoundationCompat
+import NIOPosix
 @testable import SotoCore
 @testable import SotoS3
 import XCTest
@@ -65,7 +65,7 @@ extension S3Tests {
                 logger: TestEnvironment.logger
             ) { print("Progress \($0 * 100)%") }
             XCTAssertEqual(size, Int64(buffer.readableBytes))
-            try await FileSystem.shared.removeItem(at: FilePath(filename))
+            try await NonBlockingFileIO(threadPool: .singleton).remove(path: filename)
         }
     }
 
@@ -77,7 +77,7 @@ extension S3Tests {
                 _ = try await Self.s3.multipartDownload(request, partSize: 1024 * 1024, filename: name, logger: TestEnvironment.logger) { print("Progress \($0 * 100)%") }
             }
         }
-        _ = try? await FileSystem.shared.removeItem(at: FilePath(name))
+        try? await NonBlockingFileIO(threadPool: .singleton).remove(path: name)
     }
 
     func testStuff(_ process: () async throws -> Void) async throws {
@@ -89,10 +89,10 @@ extension S3Tests {
         let buffer = Self.randomBytes!
         let name = TestEnvironment.generateResourceName()
         let filename = "S3MultipartUploadTest"
-
+        let fileIO = NonBlockingFileIO(threadPool: .singleton)
         await XCTAsyncAssertNoThrow {
-            try await FileSystem.shared.withFileHandle(forWritingAt: FilePath(filename), options: .newFile(replaceExisting: true)) { fileHandle in
-                _ = try await fileHandle.write(contentsOf: buffer.readableBytesView, toAbsoluteOffset: 0)
+            try await fileIO.withFileHandle(path: filename, mode: .write, flags: .allowFileCreation()) { fileHandle in
+                try await fileIO.write(fileHandle: fileHandle, buffer: buffer)
             }
         }
 
@@ -113,7 +113,7 @@ extension S3Tests {
                 XCTAssertEqual(responseBody, buffer)
             }
         } teardown: {
-            await XCTAsyncAssertNoThrow { try await FileSystem.shared.removeItem(at: FilePath(filename)) }
+            await XCTAsyncAssertNoThrow { try await NonBlockingFileIO(threadPool: .singleton).remove(path: filename) }
         }
     }
 
@@ -147,9 +147,10 @@ extension S3Tests {
         let name = TestEnvironment.generateResourceName()
         let filename = "testResumeMultiPartUpload"
 
+        let fileIO = NonBlockingFileIO(threadPool: .singleton)
         await XCTAsyncAssertNoThrow {
-            try await FileSystem.shared.withFileHandle(forWritingAt: FilePath(filename), options: .newFile(replaceExisting: true)) { fileHandle in
-                _ = try await fileHandle.write(contentsOf: buffer.readableBytesView, toAbsoluteOffset: 0)
+            try await fileIO.withFileHandle(path: filename, mode: .write, flags: .allowFileCreation()) { fileHandle in
+                try await fileIO.write(fileHandle: fileHandle, buffer: buffer)
             }
         }
 
@@ -197,7 +198,7 @@ extension S3Tests {
                 XCTAssertEqual(responseBody, buffer)
             }
         } teardown: {
-            await XCTAsyncAssertNoThrow { try await FileSystem.shared.removeItem(at: FilePath(filename)) }
+            await XCTAsyncAssertNoThrow { try await NonBlockingFileIO(threadPool: .singleton).remove(path: filename) }
         }
     }
 
